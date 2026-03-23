@@ -65,7 +65,7 @@ func New[T any](path string, opts ...Option[T]) (*Loader[T], error) {
 	}
 
 	// Load once eagerly so callers can fail fast on startup
-	if err := l.reload(); err != nil {
+	if err := l.reload(false); err != nil {
 		return nil, fmt.Errorf("configr: initial load of %q failed: %w", path, err)
 	}
 
@@ -109,7 +109,7 @@ func (l *Loader[T]) Stop() {
 // startWatcher wires up the polling loop
 func (l *Loader[T]) startWatcher() {
 	l.watcher = newWatcher(l.path, l.opts.pollInterval, func() {
-		if err := l.reload(); err != nil {
+		if err := l.reload(true); err != nil {
 			// Parse or validation error.
 			// Keep the current config in effect.
 			// Production systems should log this, however we dont impose a logger here
@@ -121,7 +121,7 @@ func (l *Loader[T]) startWatcher() {
 
 // reload reads the file, decodes it, applies defaults, validates, and if everything passes
 // atomically swaps in the new config.
-func (l *Loader[T]) reload() error {
+func (l *Loader[T]) reload(notify bool) error {
 	f, err := os.Open(l.path)
 	if err != nil {
 		return err
@@ -152,7 +152,7 @@ func (l *Loader[T]) reload() error {
 	// as the atomic.Pointer holds a reference to it.
 	l.val.Store(&cfg)
 
-	if l.opts.onChange != nil {
+	if notify && l.opts.onChange != nil {
 		go l.opts.onChange(cfg)
 	}
 
