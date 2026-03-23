@@ -5,8 +5,11 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Adam-445/configr"
 )
@@ -219,5 +222,62 @@ func TestGet_ReturnsCopy(t *testing.T) {
 	// The loader must still hold the original value.
 	if loader.Get().Host != "original" {
 		t.Error("Get() should return a copy. Mutating it must not affect the loader")
+	}
+}
+
+// --- Hot reload and Watch ---
+
+func TestNew_HotReload(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+
+	// Write initial config.
+	initial := testConfig{Host: "v1", Port: 1}
+	data, _ := json.Marshal(initial)
+	os.WriteFile(path, data, 0o644)
+
+	var callbackCount atomic.Int32
+	var lastHost atomic.Value
+	lastHost.Store("")
+
+	loader, err := configr.New[testConfig](path,
+		configr.WithPollInterval[testConfig](50*time.Millisecond),
+		configr.WithOnChange(func(c testConfig) {
+			callbackCount.Add(1)
+			lastHost.Store(c.Host)
+		}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer loader.Stop()
+
+	// Sanity: initial read
+	if loader.Get().Host != "v1" {
+		t.Fatalf("expected initial host=v1, got %q", loader.Get().Host)
+	}
+
+	// Wait a tick so the watcher captures the current mtime before we write.
+	time.Sleep(100 * time.Millisecond)
+
+	// Update the file.
+	updated := testConfig{Host: "v2", Port: 2}
+	data, _ = json.Marshal(updated)
+	os.WriteFile(path, data, 0o644)
+
+	// Allow up to 500ms for the reload to propagate.
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if loader.Get().Host == "v2" {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	if loader.Get().Host != "v2" {
+		t.Errorf("expected hot-reloaded host=v2, got %q", loader.Get().Host)
+	}
+	if callbackCount.Load() == 0 {
+		t.Error("onChange callback was never called")
 	}
 }
