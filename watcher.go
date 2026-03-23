@@ -11,7 +11,7 @@ import (
 //   - Config files changes rarely, a 2 second poll adds negligible overhead
 //   - No additional dependencies
 //
-// if you need sub-second reaction times consider replacing this with fsnotify (keep in mind it requires a C compilers in some Oses afaik)
+// if you need sub-second reaction times consider replacing this with fsnotify
 type watcher struct {
 	path     string
 	interval time.Duration
