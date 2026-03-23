@@ -2,7 +2,9 @@ package configr_test
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/Adam-445/configr"
@@ -101,6 +103,77 @@ func TestLoad(t *testing.T) {
 			if !tc.wantErr {
 				if cfg.Host != tc.wantHost || cfg.Port != tc.wantPort {
 					t.Errorf("got %+v, want host=%s port=%d", cfg, tc.wantHost, tc.wantPort)
+				}
+			}
+		})
+	}
+}
+
+// --- WithDefaults ---
+
+func TestLoad_Defaults(t *testing.T) {
+	path := writeJSON(t, testConfig{Host: "localhost", Port: 8080})
+	cfg, err := configr.Load[testConfig](path,
+		configr.WithDefaults(func(c *testConfig) {
+			if c.Timeout == 0 {
+				c.Timeout = 30
+			}
+		}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Timeout != 30 {
+		t.Errorf("expected default timeout=30, got %d", cfg.Timeout)
+	}
+}
+
+// --- WithValidate ---
+
+func TestLoad_Validation(t *testing.T) {
+	type testCase struct {
+		name       string
+		config     testConfig
+		wantErr    bool
+		wantErrMsg string // optional substring
+	}
+
+	cases := []testCase{
+		{
+			name:    "validation passes",
+			config:  testConfig{Host: "localhost", Port: 8080},
+			wantErr: false,
+		},
+		{
+			name:       "validation fails (negative port)",
+			config:     testConfig{Host: "localhost", Port: -1},
+			wantErr:    true,
+			wantErrMsg: "port must be positive",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeJSON(t, tc.config)
+			_, err := configr.Load[testConfig](path,
+				configr.WithValidate(func(c testConfig) error {
+					if c.Port <= 0 {
+						return errors.New("port must be positive")
+					}
+					return nil
+				}),
+			)
+
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if tc.wantErrMsg != "" && !strings.Contains(err.Error(), tc.wantErrMsg) {
+					t.Errorf("expected error containing %q, got %v", tc.wantErrMsg, err)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
 				}
 			}
 		})
