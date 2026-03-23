@@ -3,6 +3,7 @@ package configr_test
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -177,5 +178,46 @@ func TestLoad_Validation(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// --- Custom Decoder ---
+
+// brokenDecoder always returns an error. It's used to test decoder error paths.
+type brokenDecoder struct{}
+
+func (brokenDecoder) Decode(_ io.Reader, _ any) error {
+	return errors.New("broken decoder")
+}
+
+func TestLoad_CustomDecoder(t *testing.T) {
+	f, _ := os.CreateTemp(t.TempDir(), "*.json")
+	f.WriteString(`{}`)
+	f.Close()
+
+	_, err := configr.Load[testConfig](f.Name(),
+		configr.WithDecoder[testConfig](brokenDecoder{}),
+	)
+	if err == nil {
+		t.Fatal("expected error from broken decoder, got nil")
+	}
+}
+
+// --- Get (atomic read) ---
+
+func TestGet_ReturnsCopy(t *testing.T) {
+	path := writeJSON(t, testConfig{Host: "original"})
+	loader, err := configr.New[testConfig](path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer loader.Stop()
+
+	cfg := loader.Get()
+	cfg.Host = "mutated" // mutate the local copy
+
+	// The loader must still hold the original value.
+	if loader.Get().Host != "original" {
+		t.Error("Get() should return a copy. Mutating it must not affect the loader")
 	}
 }
