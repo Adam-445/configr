@@ -6,7 +6,7 @@ A simple, format-agnostic, hot-reloading configuration loader for Go.
 // One-shot
 cfg, err := configr.Load[MyConfig]("config.json")
 
-// Live reload — Get() always returns the latest valid config
+// Live reload (Get() always returns the latest valid config)
 loader, err := configr.New[MyConfig]("config.json",
     configr.WithOnChange(func(c MyConfig) {
         server.Reload(c)
