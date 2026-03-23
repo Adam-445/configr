@@ -31,44 +31,78 @@ func writeJSON(t *testing.T, v any) string {
 	return f.Name()
 }
 
-// -- Load (one-shot) --
-func TestLoad_Valid(t *testing.T) {
-	path := writeJSON(t, testConfig{Host: "localhost", Port: 8080})
-	cfg, err := configr.Load[testConfig](path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+// --- Load ---
+
+func TestLoad(t *testing.T) {
+	type testCase struct {
+		name     string
+		setup    func(t *testing.T) string // returns path to config file
+		wantErr  bool
+		wantHost string // only if no error expected
+		wantPort int
 	}
-	if cfg.Host != "localhost" || cfg.Port != 8080 {
-		t.Errorf("got %+v, want host=localhost port=8080", cfg)
+
+	cases := []testCase{
+		{
+			name: "valid config",
+			setup: func(t *testing.T) string {
+				return writeJSON(t, testConfig{Host: "localhost", Port: 8080})
+			},
+			wantErr:  false,
+			wantHost: "localhost",
+			wantPort: 8080,
+		},
+		{
+			name: "file not found",
+			setup: func(t *testing.T) string {
+				return "/nonexistent/path/config.json"
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid JSON",
+			setup: func(t *testing.T) string {
+				f, err := os.CreateTemp(t.TempDir(), "*.json")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := f.WriteString(`{bad json`); err != nil {
+					t.Fatal(err)
+				}
+				f.Close()
+				return f.Name()
+			},
+			wantErr: true,
+		},
+		{
+			name: "unknown field (typo)",
+			setup: func(t *testing.T) string {
+				f, err := os.CreateTemp(t.TempDir(), "*.json")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := f.WriteString(`{"host":"localhost","typo_field":1}`); err != nil {
+					t.Fatal(err)
+				}
+				f.Close()
+				return f.Name()
+			},
+			wantErr: true,
+		},
 	}
-}
 
-func TestLoad_FileNotFound(t *testing.T) {
-	_, err := configr.Load[testConfig]("/nonexistent/path/config.json")
-	if err == nil {
-		t.Fatal("expected error for missing file, got nil")
-	}
-}
-
-func TestLoad_InvalidJSON(t *testing.T) {
-	f, _ := os.CreateTemp(t.TempDir(), "*json")
-	f.WriteString(`{bad json`)
-	f.Close()
-
-	_, err := configr.Load[testConfig](f.Name())
-	if err == nil {
-		t.Fatal("expected error for invalid JSON, got nil")
-	}
-}
-
-func TestLoad_UnknownField(t *testing.T) {
-	// the JSON decoder uses DisallowUnknownFields to catch typos.
-	f, _ := os.CreateTemp(t.TempDir(), "*.json")
-	f.WriteString(`{"host":"localhost:,"typo_field":1}`)
-	f.Close()
-
-	_, err := configr.Load[testConfig](f.Name())
-	if err == nil {
-		t.Fatal("expected error for unknown field, got nil")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := tc.setup(t)
+			cfg, err := configr.Load[testConfig](path)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("unexpected error: %v, wantErr=%v", err, tc.wantErr)
+			}
+			if !tc.wantErr {
+				if cfg.Host != tc.wantHost || cfg.Port != tc.wantPort {
+					t.Errorf("got %+v, want host=%s port=%d", cfg, tc.wantHost, tc.wantPort)
+				}
+			}
+		})
 	}
 }
