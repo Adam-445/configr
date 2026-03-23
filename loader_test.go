@@ -281,3 +281,69 @@ func TestNew_HotReload(t *testing.T) {
 		t.Error("onChange callback was never called")
 	}
 }
+
+func TestNew_InvalidReloadKeepsPrevious(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+
+	// Valid initial config.
+	data, _ := json.Marshal(testConfig{Host: "good", Port: 80})
+	os.WriteFile(path, data, 0o644)
+
+	loader, err := configr.New[testConfig](path,
+		configr.WithPollInterval[testConfig](50*time.Millisecond),
+		configr.WithValidate(func(c testConfig) error {
+			if c.Port <= 0 {
+				return errors.New("port must be positive")
+			}
+			return nil
+		}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer loader.Stop()
+
+	time.Sleep(100 * time.Millisecond)
+
+	// Write a config that fails validation.
+	os.WriteFile(path, []byte(`{"host":"bad","port":-1}`), 0o644)
+	time.Sleep(300 * time.Millisecond)
+
+	// The loader must have kept the last valid config.
+	if loader.Get().Host != "good" {
+		t.Errorf("expected loader to keep valid config after failed reload, got host=%q", loader.Get().Host)
+	}
+}
+
+func TestStop_HaltsWatcher(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	data, _ := json.Marshal(testConfig{Host: "v1"})
+	os.WriteFile(path, data, 0o644)
+
+	var callbackFired atomic.Bool
+	loader, err := configr.New[testConfig](path,
+		configr.WithPollInterval[testConfig](50*time.Millisecond),
+		configr.WithOnChange(func(_ testConfig) {
+			callbackFired.Store(true)
+		}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	loader.Stop()
+
+	// Calling Stop a second time must not panic.
+	loader.Stop()
+
+	// Update the file. The watcher should NOT fire after Stop.
+	time.Sleep(100 * time.Millisecond)
+	os.WriteFile(path, []byte(`{"host":"v2"}`), 0o644)
+	time.Sleep(300 * time.Millisecond)
+
+	if callbackFired.Load() {
+		t.Error("onChange fired after Stop(). watcher was not halted")
+	}
+}
