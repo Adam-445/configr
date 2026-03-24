@@ -41,3 +41,57 @@ For YAML support (optional, separate module):
 go get github.com/Adam-445/configr/yaml
 go get gopkg.in/yaml.v3
 ```
+## Usage
+ 
+### One-shot load
+ 
+```go
+type Config struct {
+    Host string `json:"host"`
+    Port int    `json:"port"`
+}
+ 
+cfg, err := configr.Load[Config]("config.json")
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Println(cfg.Port) // 8080
+```
+ 
+### Hot-reload
+ 
+```go
+loader, err := configr.New[Config]("config.json",
+    configr.WithPollInterval[Config](2*time.Second),
+    configr.WithDefaults(func(c *Config) {
+        if c.Port == 0 { c.Port = 8080 }
+    }),
+    configr.WithValidate(func(c Config) error {
+        if c.Host == "" { return errors.New("host required") }
+        return nil
+    }),
+    configr.WithOnChange(func(c Config) {
+        log.Printf("reloaded: port=%d", c.Port)
+    }),
+)
+if err != nil {
+    log.Fatal(err)
+}
+defer loader.Stop()
+ 
+// Anywhere in your code (safe from any goroutine and doesnt block):
+cfg := loader.Get()
+```
+ 
+### YAML
+ 
+```go
+import (
+    "github.com/Adam-445/configr"
+    configryaml "github.com/Adam-445/configr/yaml"
+)
+ 
+loader, err := configr.New[Config]("config.yaml",
+    configr.WithDecoder[Config](configryaml.YAML),
+)
+```
