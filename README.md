@@ -186,3 +186,13 @@ cfg, err := configr.Load[Config]("config.json",
     configr.WithValidate(...),
 )
 ```
+
+## Contributing
+ 
+PRs are welcome. When adding a new built-in decoder, create a sub-package
+(like `yaml/`) so the dependency is opt-in and never forced on users who don't
+need it.
+ 
+## License
+ 
+MIT
