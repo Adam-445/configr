@@ -95,3 +95,68 @@ loader, err := configr.New[Config]("config.yaml",
     configr.WithDecoder[Config](configryaml.YAML),
 )
 ```
+
+ 
+### Custom decoder
+ 
+Implement the `Decoder` interface to support any format:
+ 
+```go
+type Decoder interface {
+    Decode(r io.Reader, v any) error
+}
+ 
+type myTOMLDecoder struct{}
+ 
+func (myTOMLDecoder) Decode(r io.Reader, v any) error {
+    return toml.NewDecoder(r).Decode(v)
+}
+ 
+loader, err := configr.New[Config]("config.toml",
+    configr.WithDecoder[Config](myTOMLDecoder{}),
+)
+```
+ 
+## Options
+ 
+| Option | Default | Description |
+|---|---|---|
+| `WithDecoder` | JSON | Format decoder |
+| `WithPollInterval` | 2s | How often to check the file for changes |
+| `WithDefaults` | — | Fill in zero-value fields before validation |
+| `WithValidate` | — | Reject invalid configs, and keep the previous on failure |
+| `WithOnChange` | — | Callback fired (in a goroutine) after each successful reload |
+
+## Project structure
+ 
+```
+configr/
+├── configr.go          package doc
+├── decoder.go          Decoder interface
+├── json.go             JSON decoder (stdlib, default)
+├── loader.go           Loader[T], Load(), New(), Get(), Watch(), Stop()
+├── options.go          Option funcs (WithDecoder, WithOnChange, ...)
+├── watcher.go          Polling file watcher
+├── loader_test.go      test suite
+├── yaml/
+    └── yaml.go         YAML decoder (optional, gopkg.in/yaml.v3)
+```
+
+## Migrating from a hand-rolled config loader
+ 
+Before (typical pattern):
+ 
+```go
+f, _ := os.Open("config.json")
+cfg := &Config{}
+json.NewDecoder(f).Decode(cfg)
+```
+ 
+After:
+ 
+```go
+cfg, err := configr.Load[Config]("config.json",
+    configr.WithDefaults(...),
+    configr.WithValidate(...),
+)
+```
