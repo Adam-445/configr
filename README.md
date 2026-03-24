@@ -116,6 +116,32 @@ loader, err := configr.New[Config]("config.toml",
     configr.WithDecoder[Config](myTOMLDecoder{}),
 )
 ```
+
+## Safety model
+ 
+`Get()` reads an `atomic.Pointer[T]`, so:
+ 
+- Reads never block, even during a concurrent reload.
+- The pointer is swapped atomically, thus callers see either the old or the new
+  config, never a partially written one.
+- If `WithValidate` rejects the new config, the pointer is not swapped and the
+  previous config stays in effect.
+ 
+This mirrors the safety goal of Raft's cluster membership changes (Section 6 of the
+[Raft paper](https://raft.github.io/raft.pdf)): the system is never in an
+undefined state during the transition.
+ 
+## How file watching works
+ 
+configr uses polling (checking the file's modification time on a ticker)
+rather than OS-level events (inotify, kqueue, FSEvents). This is intentional:
+ 
+- Works identically on Linux, macOS, and Windows.
+- Config files change rarely. A 2s poll is negligible overhead.
+- No C compiler dependency (unlike some fsnotify bindings).
+ 
+If you need sub-100ms reaction time, implement your own watcher and call
+`loader.Watch()` after setting up an external notifier.
  
 ## Options
  
